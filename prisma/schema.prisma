@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  sparks      Spark[]
+  collections Collection[]
+  canvases    Canvas[]
+}
+
+model Spark {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String // "url" | "note" | "embed"
+  url         String?
+  title       String?
+  description String?
+  whySaved    String?
+  status      String   @default("inbox") // inbox | collected | in_trail | processed | archived
+  createdAt   DateTime @default(now())
+
+  // Visual/media metadata, populated by the link capture fetcher.
+  mediaType    String  @default("text") // text | link | video | image
+  provider     String? // youtube | tiktok | vimeo | web
+  thumbnailUrl String?
+  embedHtml    String?
+  domain       String?
+  width        Int?
+  height       Int?
+
+  user        User               @relation(fields: [userId], references: [id])
+  collections SparkCollection[]
+  canvasNodes CanvasNode[]
+
+  @@index([userId])
+}
+
+model Collection {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user   User              @relation(fields: [userId], references: [id])
+  sparks SparkCollection[]
+
+  @@index([userId])
+}
+
+model SparkCollection {
+  sparkId      String
+  collectionId String
+  addedAt      DateTime @default(now())
+
+  spark      Spark      @relation(fields: [sparkId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([sparkId, collectionId])
+}
+
+model Canvas {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  user  User         @relation(fields: [userId], references: [id])
+  nodes CanvasNode[]
+  edges CanvasEdge[]
+
+  @@index([userId])
+}
+
+model CanvasNode {
+  id              String  @id @default(cuid())
+  canvasId        String
+  kind            String // "spark" | "text" | "image"
+  sparkId         String?
+  text            String?
+  imageUrl        String? // set when kind = "image"
+  x               Float
+  y               Float
+  detailLevel     String  @default("compact") // "compact" | "detailed" — spark nodes only
+  fontSize        Int     @default(14) // px — text nodes only
+  fontFamily      String  @default("sans") // "sans" | "serif" | "mono" — text nodes only
+  textColor       String  @default("ink") // palette key — text nodes only
+  backgroundColor String  @default("amber") // palette key — text nodes only
+  width           Float? // text and spark nodes; null = auto-fit to content
+  height          Float? // text and spark nodes; null = auto-fit to content
+
+  canvas       Canvas       @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  spark        Spark?       @relation(fields: [sparkId], references: [id])
+  edgesFrom    CanvasEdge[] @relation("edgeFrom")
+  edgesTo      CanvasEdge[] @relation("edgeTo")
+
+  @@index([canvasId])
+}
+
+model CanvasEdge {
+  id         String @id @default(cuid())
+  canvasId   String
+  fromNodeId String
+  toNodeId   String
+
+  canvas   Canvas     @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  fromNode CanvasNode @relation("edgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode   CanvasNode @relation("edgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([canvasId])
+}
