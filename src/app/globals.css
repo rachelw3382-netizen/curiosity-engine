@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fdfbf7;
+  --foreground: #1c1a17;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0b09;
+    --foreground: #f2ede4;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font: 100%/1.5 var(--font-sans), system-ui, sans-serif;
+}
+
+/* Type scale: tracking and leading move opposite to size (§15). */
+.text-display {
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.text-heading {
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.text-body {
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+.text-caption {
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  header {
+    background: var(--background) !important;
+    backdrop-filter: none !important;
+  }
+}
