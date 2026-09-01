@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Curiosity Engine
 
-## Getting Started
+A calm home for the things that make you curious.
 
-First, run the development server:
+Curiosity Engine has two connected layers:
+
+- **Spark Library** — a Pinterest-style masonry board of captured links, videos, and notes, organized into boards. Capture comes before categorization: a spark can belong to zero, one, or several boards, and every spark has a full detail view.
+- **Mindmaps** — freeform whiteboard canvases where sparks and free-typed text notes are dragged, connected with edges, and autosaved continuously. A real mindmap surface, not a guided flow.
+
+This is a local-first MVP: single implicit local user, no auth yet, and no AI-generated content anywhere in the app — with one narrow, deliberate exception (see below).
+
+## Technical highlights
+
+- **On-device "More like this" reranking.** Related-content suggestions are reranked by a local sentence-embedding model (`@huggingface/transformers`) running inside the Node server process — no cloud AI calls, no API keys, no per-call cost, and no data ever leaves the machine. A zero-dependency keyword scorer is the synchronous fallback if the model fails to load. This is the one scoped exception to "no AI-generated content": it reranks real fetched candidates, it never generates or invents text.
+- **Safe link capture.** Fetching metadata for a pasted link goes through SSRF-safe URL validation, then oEmbed (YouTube/TikTok/Vimeo) with an Open Graph scraping fallback for everything else — so capture never depends on a single fragile source.
+- **Graceful degradation, always.** Optional YouTube Data API v3 and Spotify (client-credentials) integrations power richer "More like this" results, but capture and browsing are never blocked by a missing API key — both fall back to a plain search link.
+- **Swappable data layer.** Prisma v7's driver-adapter architecture runs on SQLite locally and can move to Postgres with just a datasource change, no rewrite.
+
+## Tech stack
+
+- Next.js (App Router) + TypeScript + Tailwind CSS
+- Prisma ORM (v7, driver-adapter based) + SQLite for local dev
+- [`motion`](https://motion.dev) for spring-based interaction polish
+- [`@xyflow/react`](https://reactflow.dev) for the mindmap canvas
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npx prisma migrate dev   # creates dev.db and applies schema
+npx prisma db seed       # seeds sample sparks, boards, and a demo mindmap
+npm run dev              # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Two optional integrations, both fully optional — the app works without them:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `YOUTUBE_API_KEY` enables real "More like this" video suggestions on YouTube sparks via the YouTube Data API v3 free tier.
+- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` enable real "More like this" track suggestions on Spotify sparks via client-credentials auth.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key routes
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Route | Purpose |
+|---|---|
+| `/` | Landing page |
+| `/library` | Masonry Spark Library — capture, browse, filter by board |
+| `/spark/[id]` | Full-page spark detail, with inline edit/delete |
+| `/mindmap` | List of mindmap canvases |
+| `/mindmap/[id]` | The canvas itself — drag, connect, autosave |
