@@ -2,24 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import { EmbedBlock } from "@/components/EmbedBlock";
+import { SourceTag } from "@/components/SourceTag";
+import { SparkNotes } from "@/components/SparkNotes";
 import type { Spark } from "@/generated/prisma/client";
-
-const providerLabel: Record<string, string> = {
-  youtube: "YouTube",
-  tiktok: "TikTok",
-  vimeo: "Vimeo",
-  web: "Web",
-  instagram: "Instagram",
-};
-
-function WhySaved({ spark }: { spark: Spark }) {
-  if (!spark.whySaved) return null;
-  return (
-    <p className="text-body mt-2 border-l-2 border-amber-300 pl-2.5 text-[0.7rem] italic text-zinc-500 dark:border-amber-700 dark:text-zinc-400">
-      &ldquo;{spark.whySaved}&rdquo;
-    </p>
-  );
-}
 
 /**
  * Purely presentational — the whole card is wrapped in a click-to-expand
@@ -29,10 +14,13 @@ function WhySaved({ spark }: { spark: Spark }) {
 export function MasonryCard({
   spark,
   showDescription = true,
+  showNotes = showDescription,
   footer,
 }: {
   spark: Spark;
   showDescription?: boolean;
+  /** The spark's saved notes. Follows `showDescription` unless set — the library grid hides them. */
+  showNotes?: boolean;
   /** Replaces the default title/description block below the media — used when editing. */
   footer?: ReactNode;
 }) {
@@ -55,9 +43,7 @@ export function MasonryCard({
             alt=""
             className="h-full w-full object-cover"
           />
-          <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[0.6rem] font-medium text-white backdrop-blur">
-            {providerLabel[spark.provider ?? "web"] ?? "Video"}
-          </span>
+          <SourceTag spark={spark} overlay />
           <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-zinc-900 shadow">
               ▶
@@ -75,7 +61,7 @@ export function MasonryCard({
                   {spark.description}
                 </p>
               ) : null}
-              {showDescription ? <WhySaved spark={spark} /> : null}
+              {showNotes ? <SparkNotes notes={spark.whySaved} /> : null}
             </>
           )}
         </div>
@@ -86,8 +72,13 @@ export function MasonryCard({
   if (spark.mediaType === "image" && spark.thumbnailUrl) {
     return (
       <div className={cardShell}>
-        {imageFailed ? null : (
-          <div className="w-full bg-zinc-100 dark:bg-zinc-900">
+        {imageFailed ? (
+          <div className="px-3 pt-3">
+            <SourceTag spark={spark} />
+          </div>
+        ) : (
+          <div className="relative w-full bg-zinc-100 dark:bg-zinc-900">
+            <SourceTag spark={spark} overlay />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={spark.thumbnailUrl}
@@ -100,12 +91,7 @@ export function MasonryCard({
         <div className="p-3">
           {footer ?? (
             <>
-              {spark.domain ? (
-                <span className="text-caption text-[0.65rem] uppercase text-amber-700 dark:text-amber-400">
-                  {spark.domain}
-                </span>
-              ) : null}
-              <h3 className="text-heading mt-1 text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+              <h3 className="text-heading text-xs font-semibold text-zinc-900 dark:text-zinc-50">
                 {spark.title}
               </h3>
               {showDescription && spark.description ? (
@@ -113,7 +99,7 @@ export function MasonryCard({
                   {spark.description}
                 </p>
               ) : null}
-              {showDescription ? <WhySaved spark={spark} /> : null}
+              {showNotes ? <SparkNotes notes={spark.whySaved} /> : null}
             </>
           )}
         </div>
@@ -124,21 +110,21 @@ export function MasonryCard({
   if (spark.mediaType === "embed" && spark.embedHtml) {
     return (
       <div className={cardShell}>
-        <EmbedBlock html={spark.embedHtml} width={spark.width} height={spark.height} />
+        <div className="px-3 pt-3">
+          <SourceTag spark={spark} />
+        </div>
+        <div className="pt-2">
+          <EmbedBlock html={spark.embedHtml} width={spark.width} height={spark.height} />
+        </div>
         <div className="p-3">
           {footer ?? (
             <>
-              {spark.domain ? (
-                <span className="text-caption text-[0.65rem] uppercase text-amber-700 dark:text-amber-400">
-                  {spark.domain}
-                </span>
-              ) : null}
-              <h3 className="text-heading mt-1 text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+              <h3 className="text-heading text-xs font-semibold text-zinc-900 dark:text-zinc-50">
                 {spark.title}
               </h3>
               {/* No description here — embed capture never fetches metadata, so this field is
                   never legitimately populated for an embed spark (see SparkDetail/SparkEditForm). */}
-              {showDescription ? <WhySaved spark={spark} /> : null}
+              {showNotes ? <SparkNotes notes={spark.whySaved} /> : null}
             </>
           )}
         </div>
@@ -151,10 +137,8 @@ export function MasonryCard({
       <div className={`${cardShell} p-3`}>
         {footer ?? (
           <>
-            <span className="text-caption text-[0.65rem] uppercase text-amber-700 dark:text-amber-400">
-              {spark.domain ?? "Link"}
-            </span>
-            <h3 className="text-heading mt-1 text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+            <SourceTag spark={spark} />
+            <h3 className="text-heading mt-2 text-xs font-semibold text-zinc-900 dark:text-zinc-50">
               {spark.title}
             </h3>
             {showDescription && spark.description ? (
@@ -162,7 +146,7 @@ export function MasonryCard({
                 {spark.description}
               </p>
             ) : null}
-            {showDescription ? <WhySaved spark={spark} /> : null}
+            {showNotes ? <SparkNotes notes={spark.whySaved} /> : null}
           </>
         )}
       </div>
@@ -182,7 +166,7 @@ export function MasonryCard({
               {spark.description}
             </p>
           ) : null}
-          {showDescription ? <WhySaved spark={spark} /> : null}
+          {showNotes ? <SparkNotes notes={spark.whySaved} /> : null}
         </>
       )}
     </div>

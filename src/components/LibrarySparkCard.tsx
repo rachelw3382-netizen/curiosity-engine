@@ -53,7 +53,7 @@ export function LibrarySparkCard({
         transition={{ type: "spring", bounce: 0, duration: 0.3 }}
       >
         <Link href={`/spark/${spark.id}`}>
-          <MasonryCard spark={spark} />
+          <MasonryCard spark={spark} showNotes={false} />
         </Link>
       </motion.div>
       <div className="absolute right-2 top-2 flex flex-col items-end gap-1">

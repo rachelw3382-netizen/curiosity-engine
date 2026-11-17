@@ -1,9 +1,9 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Redo2, Undo2 } from "lucide-react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -25,16 +25,15 @@ import { AddSparkPanel } from "@/components/canvas/AddSparkPanel";
 import { ImageNode, type ImageFlowNode } from "@/components/canvas/ImageNode";
 import { SparkNode, type SparkFlowNode } from "@/components/canvas/SparkNode";
 import { TextNode, type TextFlowNode } from "@/components/canvas/TextNode";
+import { SaveIndicator, SaveProvider, useSaveTracker } from "@/components/canvas/save-status";
 import { clampFontSize, DEFAULT_FONT_SIZE } from "@/components/canvas/text-style-options";
+import { CanvasEditContext, type CanvasEdit } from "@/components/canvas/canvas-edit";
 import {
-  addImageNode,
-  addSparkNode,
-  addTextNode,
-  createCanvasEdge,
-  deleteCanvasEdge,
-  deleteCanvasNode,
   renameCanvas,
-  updateNodePosition,
+  syncCanvas,
+  validateImageUrl,
+  type SyncEdge,
+  type SyncNode,
 } from "@/lib/canvas-actions";
 import type { CanvasEdge, CanvasNode, Spark } from "@/generated/prisma/client";
 
@@ -87,6 +86,80 @@ const DEFAULT_TEXT_STYLE = {
   textColor: "ink" as const,
   backgroundColor: "amber" as const,
 };
+
+const HISTORY_LIMIT = 100;
+const AUTOSAVE_DELAY_MS = 400;
+
+type Snapshot = { nodes: FlowNode[]; edges: Edge[] };
+
+/** Strips React Flow's runtime-only fields (selected, measured, dragging…) from a node. */
+function cleanNode(n: FlowNode): FlowNode {
+  const copy = { id: n.id, type: n.type, position: { ...n.position }, data: { ...n.data } } as FlowNode;
+  if (n.width != null) copy.width = n.width;
+  if (n.height != null) copy.height = n.height;
+  return copy;
+}
+
+function cleanEdge(e: Edge): Edge {
+  return {
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.sourceHandle ?? null,
+    targetHandle: e.targetHandle ?? null,
+  };
+}
+
+/** The database row a node maps to. */
+function toSyncNode(n: FlowNode): SyncNode {
+  const base = { id: n.id, x: n.position.x, y: n.position.y };
+  if (n.type === "spark") {
+    return {
+      ...base,
+      kind: "spark",
+      sparkId: n.data.spark.id,
+      detailLevel: n.data.detailLevel,
+      width: n.data.hasCustomWidth ? (n.width ?? null) : null,
+    };
+  }
+  if (n.type === "image") {
+    return { ...base, kind: "image", imageUrl: n.data.imageUrl };
+  }
+  return {
+    ...base,
+    kind: "text",
+    text: n.data.text,
+    fontSize: n.data.fontSize,
+    fontFamily: n.data.fontFamily,
+    textColor: n.data.textColor,
+    backgroundColor: n.data.backgroundColor,
+    width: n.width ?? null,
+    height: n.height ?? null,
+  };
+}
+
+function toSyncEdge(e: Edge): SyncEdge {
+  return {
+    id: e.id,
+    fromNodeId: e.source,
+    toNodeId: e.target,
+    sourceHandle: e.sourceHandle ?? null,
+    targetHandle: e.targetHandle ?? null,
+  };
+}
+
+/** Rows for the current canvas; edges whose node is gone are dropped. */
+function toRows(nodes: FlowNode[], edges: Edge[]) {
+  const ids = new Set(nodes.map((n) => n.id));
+  return {
+    nodes: nodes.map(toSyncNode),
+    edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map(toSyncEdge),
+  };
+}
+
+function snapshotKey(snapshot: Snapshot) {
+  return JSON.stringify(toRows(snapshot.nodes, snapshot.edges));
+}
 
 function toFlowNode(node: DbNode): FlowNode | null {
   if (node.kind === "spark") {
@@ -150,16 +223,239 @@ function CanvasInner({
   boards: { id: string; name: string }[];
 }) {
   const { screenToFlowPosition } = useReactFlow();
-  const [, startTransition] = useTransition();
+  const { state: saveState, save, setDirty } = useSaveTracker();
   const [name, setName] = useState(canvasName);
-  const [remainingSparks, setRemainingSparks] = useState(availableSparks);
   const [sparkModalOpen, setSparkModalOpen] = useState(false);
   const [pictureModalOpen, setPictureModalOpen] = useState(false);
   const [nodes, setNodes] = useState<FlowNode[]>(
     initialNodes.map(toFlowNode).filter((n): n is FlowNode => n !== null),
   );
   const [edges, setEdges] = useState<Edge[]>(
-    initialEdges.map((edge) => ({ id: edge.id, source: edge.fromNodeId, target: edge.toNodeId })),
+    initialEdges.map((edge) => ({
+      id: edge.id,
+      source: edge.fromNodeId,
+      target: edge.toNodeId,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+    })),
+  );
+
+  // Always-current copies for event handlers (history snapshots, autosave).
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
+
+  // ---- Sparks still available to add: everything that isn't currently on the canvas.
+  // Derived (not stored) so undo/redo of an add or delete keeps the picker correct.
+  const sparkPool = useMemo<SparkWithBoards[]>(
+    () => [
+      ...initialNodes
+        .filter((n): n is DbNode & { spark: Spark } => n.spark !== null)
+        .map((n) => ({ ...n.spark, collections: [] })),
+      ...availableSparks,
+    ],
+    [initialNodes, availableSparks],
+  );
+  const remainingSparks = useMemo(() => {
+    const used = new Set(
+      nodes.filter((n): n is SparkFlowNode => n.type === "spark").map((n) => n.data.spark.id),
+    );
+    return sparkPool.filter((s) => !used.has(s.id));
+  }, [nodes, sparkPool]);
+
+  // ---- Undo / redo: a stack of whole-canvas snapshots taken *before* each edit.
+  const past = useRef<Snapshot[]>([]);
+  const future = useRef<Snapshot[]>([]);
+  const lastCheckpoint = useRef<{ group?: string; at: number }>({ at: 0 });
+  const [history, setHistory] = useState({ undo: 0, redo: 0 });
+
+  const takeSnapshot = useCallback(
+    (): Snapshot => ({
+      nodes: nodesRef.current.map(cleanNode),
+      edges: edgesRef.current.map(cleanEdge),
+    }),
+    [],
+  );
+
+  const syncHistoryCounts = useCallback(
+    () => setHistory({ undo: past.current.length, redo: future.current.length }),
+    [],
+  );
+
+  const checkpoint = useCallback(
+    (group?: string, windowMs = 0) => {
+      const now = Date.now();
+      const last = lastCheckpoint.current;
+      lastCheckpoint.current = { group, at: now };
+      if (group && last.group === group && now - last.at < windowMs) return;
+      past.current.push(takeSnapshot());
+      if (past.current.length > HISTORY_LIMIT) past.current.shift();
+      future.current = [];
+      syncHistoryCounts();
+    },
+    [takeSnapshot, syncHistoryCounts],
+  );
+
+  const applySnapshot = useCallback((snapshot: Snapshot) => {
+    lastCheckpoint.current = { at: 0 };
+    setNodes(snapshot.nodes.map(cleanNode));
+    setEdges(snapshot.edges.map(cleanEdge));
+  }, []);
+
+  const stepHistory = useCallback(
+    (from: Snapshot[], to: Snapshot[]) => {
+      const current = takeSnapshot();
+      const currentKey = snapshotKey(current);
+      let target: Snapshot | undefined;
+      // Skip steps that wouldn't visibly change anything (e.g. a click that didn't move a card).
+      while ((target = from.pop())) {
+        if (snapshotKey(target) !== currentKey) break;
+        target = undefined;
+      }
+      if (target) {
+        to.push(current);
+        applySnapshot(target);
+      }
+      syncHistoryCounts();
+    },
+    [takeSnapshot, applySnapshot, syncHistoryCounts],
+  );
+
+  const undo = useCallback(() => stepHistory(past.current, future.current), [stepHistory]);
+  const redo = useCallback(() => stepHistory(future.current, past.current), [stepHistory]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      // Inside a text box, ⌘Z belongs to the browser's own typing undo.
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      const key = event.key.toLowerCase();
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+      } else if (key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
+
+  // ---- Autosave: diff the canvas against what the database last received, then send only
+  // the changes. Every edit — including undo and redo — saves through this one path.
+  type SavedRows = { nodes: Map<string, string>; edges: Map<string, string> };
+  const saved = useRef<SavedRows>({ nodes: new Map(), edges: new Map() });
+  // Seed with what the server sent, before the first diff runs (effects run in order).
+  useEffect(() => {
+    const flowNodes = initialNodes.map(toFlowNode).filter((n): n is FlowNode => n !== null);
+    const flowEdges: Edge[] = initialEdges.map((e) => ({
+      id: e.id,
+      source: e.fromNodeId,
+      target: e.toNodeId,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+    }));
+    const rows = toRows(flowNodes, flowEdges);
+    saved.current = {
+      nodes: new Map(rows.nodes.map((r) => [r.id, JSON.stringify(r)])),
+      edges: new Map(rows.edges.map((r) => [r.id, JSON.stringify(r)])),
+    };
+    // Only on mount: later prop refreshes must not overwrite what we've tracked as saved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const needsFullSync = useRef(false);
+  const flushRef = useRef<() => void>(() => {});
+
+  const computeChanges = useCallback(() => {
+    const store = saved.current;
+    const rows = toRows(nodesRef.current, edgesRef.current);
+    const nodeKeys = new Map(rows.nodes.map((r) => [r.id, JSON.stringify(r)]));
+    const edgeKeys = new Map(rows.edges.map((r) => [r.id, JSON.stringify(r)]));
+    return {
+      rows,
+      nodeKeys,
+      edgeKeys,
+      changes: {
+        nodes: rows.nodes.filter((r) => store.nodes.get(r.id) !== nodeKeys.get(r.id)),
+        edges: rows.edges.filter((r) => store.edges.get(r.id) !== edgeKeys.get(r.id)),
+        deletedNodeIds: [...store.nodes.keys()].filter((id) => !nodeKeys.has(id)),
+        deletedEdgeIds: [...store.edges.keys()].filter((id) => !edgeKeys.has(id)),
+      },
+    };
+  }, []);
+
+  const flush = useCallback(() => {
+    const { rows, nodeKeys, edgeKeys, changes } = computeChanges();
+    const nothingToSend =
+      !changes.nodes.length &&
+      !changes.edges.length &&
+      !changes.deletedNodeIds.length &&
+      !changes.deletedEdgeIds.length;
+    if (nothingToSend && !needsFullSync.current) {
+      setDirty(false);
+      return;
+    }
+    const payload = needsFullSync.current
+      ? { ...changes, nodes: rows.nodes, edges: rows.edges, full: true }
+      : changes;
+    needsFullSync.current = false;
+    // Optimistic: later diffs build on this, and the serial save queue keeps writes in order.
+    saved.current = { nodes: nodeKeys, edges: edgeKeys };
+    setDirty(false);
+    save(() => syncCanvas(canvasId, payload)).then((ok) => {
+      if (ok) return;
+      // Couldn't save even after retries — resend the whole canvas on the next attempt.
+      needsFullSync.current = true;
+      setTimeout(() => flushRef.current(), 5000);
+    });
+  }, [canvasId, computeChanges, save, setDirty]);
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
+
+  useEffect(() => {
+    if (!needsFullSync.current) {
+      const { changes } = computeChanges();
+      const unsaved =
+        changes.nodes.length ||
+        changes.edges.length ||
+        changes.deletedNodeIds.length ||
+        changes.deletedEdgeIds.length;
+      if (!unsaved) return;
+    }
+    setDirty(true);
+    const timer = setTimeout(flush, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [nodes, edges, computeChanges, flush, setDirty]);
+
+  // Don't wait out the debounce when the tab is hidden or closed.
+  useEffect(() => {
+    const flushNow = () => flush();
+    window.addEventListener("pagehide", flushNow);
+    document.addEventListener("visibilitychange", flushNow);
+    return () => {
+      window.removeEventListener("pagehide", flushNow);
+      document.removeEventListener("visibilitychange", flushNow);
+      flushNow();
+    };
+  }, [flush]);
+
+  // ---- What node components can do
+  const patchNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
+    setNodes((current) =>
+      current.map((n) => (n.id === nodeId ? ({ ...n, data: { ...n.data, ...patch } } as FlowNode) : n)),
+    );
+  }, []);
+
+  const edit = useMemo<CanvasEdit>(
+    () => ({ checkpoint, patchNodeData }),
+    [checkpoint, patchNodeData],
   );
 
   const setSparkNodeWidth = useCallback((nodeId: string, width: number | null) => {
@@ -176,64 +472,30 @@ function CanvasInner({
 
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode>[]) => {
-      const removed = changes.filter((c) => c.type === "remove");
-      if (removed.length) {
-        const removedSparks: SparkWithBoards[] = removed
-          .map((change) => nodes.find((n) => n.id === change.id))
-          .filter((n): n is SparkFlowNode => n?.type === "spark")
-          .map((n) => ({ ...n.data.spark, collections: [] }));
-        if (removedSparks.length) {
-          setRemainingSparks((sparks) => [...removedSparks, ...sparks]);
-        }
-        setNodes((current) => applyNodeChanges(changes, current));
-        startTransition(() => {
-          removed.forEach((change) => {
-            deleteCanvasNode(change.id);
-          });
-        });
-      } else {
-        setNodes((current) => applyNodeChanges(changes, current));
-      }
+      if (changes.some((c) => c.type === "remove")) checkpoint("delete", 300);
+      setNodes((current) => applyNodeChanges(changes, current));
     },
-    [nodes, startTransition],
+    [checkpoint],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<Edge>[]) => {
-      const removed = changes.filter((c) => c.type === "remove");
-      if (removed.length) {
-        startTransition(() => {
-          removed.forEach((change) => {
-            deleteCanvasEdge(change.id);
-          });
-        });
-      }
+      if (changes.some((c) => c.type === "remove")) checkpoint("delete", 300);
       setEdges((current) => applyEdgeChanges(changes, current));
     },
-    [startTransition],
+    [checkpoint],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
-      const tempId = `temp-${crypto.randomUUID()}`;
-      setEdges((eds) => addEdge({ ...connection, id: tempId }, eds));
-      startTransition(async () => {
-        const edge = await createCanvasEdge(canvasId, connection.source!, connection.target!);
-        setEdges((eds) => eds.map((e) => (e.id === tempId ? { ...e, id: edge.id } : e)));
-      });
+      checkpoint();
+      setEdges((eds) => addEdge({ ...connection, id: crypto.randomUUID() }, eds));
     },
-    [canvasId, startTransition],
+    [checkpoint],
   );
 
-  const onNodeDragStop = useCallback(
-    (_event: unknown, node: { id: string; position: { x: number; y: number } }) => {
-      startTransition(async () => {
-        await updateNodePosition(node.id, node.position.x, node.position.y);
-      });
-    },
-    [startTransition],
-  );
+  const onDragStart = useCallback(() => checkpoint(), [checkpoint]);
 
   function viewportCenter() {
     return screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -247,70 +509,71 @@ function CanvasInner({
     };
   }
 
-  async function handleAddSpark(sparkId: string) {
+  function handleAddSpark(sparkId: string) {
     const spark = remainingSparks.find((s) => s.id === sparkId);
     if (!spark) return;
-    const { x, y } = centerPosition();
-    const node = await addSparkNode(canvasId, sparkId, x, y);
+    checkpoint();
+    const position = centerPosition();
     setNodes((nds) => [
       ...nds,
       {
-        id: node.id,
+        id: crypto.randomUUID(),
         type: "spark",
-        position: { x, y },
+        position,
         data: { spark, detailLevel: "compact" },
       },
     ]);
-    setRemainingSparks((sparks) => sparks.filter((s) => s.id !== sparkId));
   }
 
-  async function handleAddManySparks(sparkIds: string[]) {
+  function handleAddManySparks(sparkIds: string[]) {
     const sparksToAdd = remainingSparks.filter((s) => sparkIds.includes(s.id));
     if (!sparksToAdd.length) return;
+    checkpoint();
     const positions = findOpenPositions(
       sparksToAdd.length,
       viewportCenter(),
       nodes.map((n) => n.position),
     );
-    const created = await Promise.all(
-      sparksToAdd.map(async (spark, i) => ({
-        node: await addSparkNode(canvasId, spark.id, positions[i].x, positions[i].y),
-        spark,
-        position: positions[i],
-      })),
-    );
     setNodes((nds) => [
       ...nds,
-      ...created.map(({ node, spark, position }): SparkFlowNode => ({
-        id: node.id,
-        type: "spark",
-        position,
-        data: { spark, detailLevel: "compact" },
-      })),
+      ...sparksToAdd.map(
+        (spark, i): SparkFlowNode => ({
+          id: crypto.randomUUID(),
+          type: "spark",
+          position: positions[i],
+          data: { spark, detailLevel: "compact" },
+        }),
+      ),
     ]);
-    const addedIds = new Set(sparksToAdd.map((s) => s.id));
-    setRemainingSparks((sparks) => sparks.filter((s) => !addedIds.has(s.id)));
   }
 
-  async function handleAddText() {
-    const { x, y } = centerPosition();
-    const node = await addTextNode(canvasId, x, y);
+  function handleAddText() {
+    checkpoint();
+    const position = centerPosition();
     setNodes((nds) => [
       ...nds,
-      { id: node.id, type: "text", position: { x, y }, data: { text: "", ...DEFAULT_TEXT_STYLE } },
+      { id: crypto.randomUUID(), type: "text", position, data: { text: "", ...DEFAULT_TEXT_STYLE } },
     ]);
   }
 
   async function handleAddImage(imageUrl: string) {
-    const { x, y } = centerPosition();
-    const node = await addImageNode(canvasId, imageUrl, x, y);
+    try {
+      await validateImageUrl(imageUrl);
+    } catch {
+      window.alert("That image URL can't be used. Try uploading the picture instead.");
+      return;
+    }
+    checkpoint();
+    const position = centerPosition();
     setNodes((nds) => [
       ...nds,
-      { id: node.id, type: "image", position: { x, y }, data: { imageUrl } },
+      { id: crypto.randomUUID(), type: "image", position, data: { imageUrl } },
     ]);
   }
 
   return (
+    <SaveProvider value={save}>
+    <CanvasEditContext.Provider value={edit}>
     <div className="flex h-[calc(100vh-56px)] flex-col">
       <div className="flex items-center gap-3 border-b border-black/[.06] px-6 py-3 dark:border-white/[.08]">
         <Link
@@ -323,9 +586,16 @@ function CanvasInner({
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
-          onBlur={() => startTransition(() => renameCanvas(canvasId, name))}
+          onBlur={() => {
+            const trimmed = name.trim();
+            if (trimmed) save(() => renameCanvas(canvasId, trimmed));
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
           className="text-heading rounded-lg bg-transparent px-1 text-lg font-semibold text-zinc-900 outline-none focus:bg-zinc-900/[.04] dark:text-zinc-50 dark:focus:bg-white/[.06]"
         />
+        <SaveIndicator state={saveState} />
       </div>
 
       <div className="relative flex-1">
@@ -336,16 +606,39 @@ function CanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeDragStop={onNodeDragStop}
+          onNodeDragStart={onDragStart}
+          onSelectionDragStart={onDragStart}
           connectionMode={ConnectionMode.Loose}
           fitView
           fitViewOptions={{ padding: 0.25 }}
         >
           <Background gap={24} />
-          <Controls showInteractive={false} />
+          <Controls position="bottom-right" showInteractive={false} />
         </ReactFlow>
 
-        <div className="absolute bottom-4 left-4 z-10 flex gap-2">
+        <div className="absolute bottom-4 left-16 z-10 flex items-center gap-2">
+          <div className="flex overflow-hidden rounded-full border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-900">
+            <button
+              type="button"
+              onClick={undo}
+              disabled={history.undo === 0}
+              aria-label="Undo"
+              title="Undo (⌘Z)"
+              className="flex h-9 w-10 items-center justify-center text-zinc-800 hover:bg-zinc-900/[.06] disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-200 dark:hover:bg-white/[.1]"
+            >
+              <Undo2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={history.redo === 0}
+              aria-label="Redo"
+              title="Redo (⇧⌘Z)"
+              className="flex h-9 w-10 items-center justify-center border-l border-black/[.08] text-zinc-800 hover:bg-zinc-900/[.06] disabled:opacity-30 disabled:hover:bg-transparent dark:border-white/[.145] dark:text-zinc-200 dark:hover:bg-white/[.1]"
+            >
+              <Redo2 className="h-4 w-4" />
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => setSparkModalOpen(true)}
@@ -384,6 +677,8 @@ function CanvasInner({
         <AddPictureModal onAdd={handleAddImage} onClose={() => setPictureModalOpen(false)} />
       ) : null}
     </div>
+    </CanvasEditContext.Provider>
+    </SaveProvider>
   );
 }
 

@@ -35,48 +35,85 @@ export async function deleteCanvas(canvasId: string) {
   redirect("/mindmap");
 }
 
-export async function addSparkNode(canvasId: string, sparkId: string, x: number, y: number) {
-  const node = await prisma.canvasNode.create({
-    data: { canvasId, kind: "spark", sparkId, x, y },
-    include: { spark: true },
+export interface SyncNode {
+  id: string;
+  kind: "spark" | "text" | "image";
+  sparkId?: string | null;
+  text?: string | null;
+  imageUrl?: string | null;
+  x: number;
+  y: number;
+  detailLevel?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface SyncEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+}
+
+export interface CanvasChanges {
+  nodes: SyncNode[]; // new or changed nodes (upserted)
+  deletedNodeIds: string[];
+  edges: SyncEdge[]; // new or changed edges (upserted)
+  deletedEdgeIds: string[];
+  /** Recovery mode: also delete anything on this canvas that isn't listed in nodes/edges. */
+  full?: boolean;
+}
+
+/**
+ * The single write path for the mindmap: the client sends what changed since its last
+ * save (adds, moves, text/style/size edits, deletes, undo/redo) and this applies it atomically.
+ */
+export async function syncCanvas(canvasId: string, changes: CanvasChanges) {
+  for (const node of changes.nodes) {
+    // Local /uploads files are same-origin (relative path); only pasted-URL images need the check.
+    if (node.kind === "image" && node.imageUrl && /^https?:\/\//i.test(node.imageUrl)) {
+      try {
+        assertPublicHttpUrl(node.imageUrl);
+      } catch (err) {
+        if (err instanceof UnsafeUrlError) throw err;
+        throw new UnsafeUrlError("Not a valid image URL.");
+      }
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (changes.full) {
+      await tx.canvasEdge.deleteMany({
+        where: { canvasId, id: { notIn: changes.edges.map((e) => e.id) } },
+      });
+      await tx.canvasNode.deleteMany({
+        where: { canvasId, id: { notIn: changes.nodes.map((n) => n.id) } },
+      });
+    }
+    if (changes.deletedEdgeIds.length) {
+      await tx.canvasEdge.deleteMany({ where: { canvasId, id: { in: changes.deletedEdgeIds } } });
+    }
+    if (changes.deletedNodeIds.length) {
+      await tx.canvasNode.deleteMany({ where: { canvasId, id: { in: changes.deletedNodeIds } } });
+    }
+    for (const { id, ...data } of changes.nodes) {
+      const updated = await tx.canvasNode.updateMany({ where: { id, canvasId }, data });
+      if (updated.count === 0) await tx.canvasNode.create({ data: { id, canvasId, ...data } });
+    }
+    for (const { id, ...data } of changes.edges) {
+      const updated = await tx.canvasEdge.updateMany({ where: { id, canvasId }, data });
+      if (updated.count === 0) await tx.canvasEdge.create({ data: { id, canvasId, ...data } });
+    }
   });
-  revalidatePath(`/mindmap/${canvasId}`);
-  return node;
 }
 
-export async function addTextNode(canvasId: string, x: number, y: number) {
-  const node = await prisma.canvasNode.create({
-    data: { canvasId, kind: "text", text: "", x, y },
-  });
-  revalidatePath(`/mindmap/${canvasId}`);
-  return node;
-}
-
-export async function updateNodePosition(nodeId: string, x: number, y: number) {
-  await prisma.canvasNode.update({ where: { id: nodeId }, data: { x, y } });
-}
-
-export async function updateNodeDetailLevel(
-  nodeId: string,
-  detailLevel: "compact" | "detailed",
-) {
-  await prisma.canvasNode.update({ where: { id: nodeId }, data: { detailLevel } });
-}
-
-export async function updateTextNodeContent(nodeId: string, text: string) {
-  await prisma.canvasNode.update({ where: { id: nodeId }, data: { text } });
-}
-
-export async function updateTextNodeStyle(nodeId: string, style: TextNodeStyle) {
-  await prisma.canvasNode.update({ where: { id: nodeId }, data: style });
-}
-
-export async function updateNodeSize(nodeId: string, width: number, height: number) {
-  await prisma.canvasNode.update({ where: { id: nodeId }, data: { width, height } });
-}
-
-export async function addImageNode(canvasId: string, imageUrl: string, x: number, y: number) {
-  // Local /uploads files are same-origin (relative path); only paste-URL images need the check.
+/** Pre-flight check so an unsafe pasted image URL is rejected before it lands on the canvas. */
+export async function validateImageUrl(imageUrl: string) {
   if (/^https?:\/\//i.test(imageUrl)) {
     try {
       assertPublicHttpUrl(imageUrl);
@@ -85,24 +122,4 @@ export async function addImageNode(canvasId: string, imageUrl: string, x: number
       throw new UnsafeUrlError("Not a valid image URL.");
     }
   }
-  const node = await prisma.canvasNode.create({
-    data: { canvasId, kind: "image", imageUrl, x, y },
-  });
-  revalidatePath(`/mindmap/${canvasId}`);
-  return node;
-}
-
-export async function deleteCanvasNode(nodeId: string) {
-  await prisma.canvasNode.delete({ where: { id: nodeId } });
-}
-
-export async function createCanvasEdge(canvasId: string, fromNodeId: string, toNodeId: string) {
-  const edge = await prisma.canvasEdge.create({
-    data: { canvasId, fromNodeId, toNodeId },
-  });
-  return edge;
-}
-
-export async function deleteCanvasEdge(edgeId: string) {
-  await prisma.canvasEdge.delete({ where: { id: edgeId } });
 }

@@ -25,172 +25,288 @@ async function main() {
 }
 
 async function seedSparks() {
-  const citiesBoard = await prisma.collection.create({
-    data: { userId: LOCAL_USER_ID, name: "What makes cities feel alive?" },
-  });
-  const aiBoard = await prisma.collection.create({
-    data: { userId: LOCAL_USER_ID, name: "Physical AI" },
+  const board = await prisma.collection.create({
+    data: { userId: LOCAL_USER_ID, name: "Doing the thing" },
   });
 
+  // The sample library, in the order it was saved (newest shows first in the app).
   const sparks: Array<{
     type: "url" | "note";
     title: string;
     description?: string;
     whySaved?: string;
     url?: string;
-    mediaType: "text" | "link" | "video" | "image";
+    mediaType: "text" | "link" | "video" | "image" | "embed";
     provider?: string;
     thumbnailUrl?: string;
     domain?: string;
     width?: number;
     height?: number;
-    boards?: string[];
+    embedHtml?: string;
+    status: string;
+    onBoard: boolean;
   }> = [
-    {
-      type: "url",
-      title: "Big Buck Bunny — Official Trailer",
-      description: "by Blender Foundation",
-      whySaved: "Open-movie CGI still holds up — wanted to see how they lit the grass.",
-      url: "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
-      mediaType: "video",
-      provider: "youtube",
-      thumbnailUrl: "https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg",
-      domain: "youtube",
-      width: 480,
-      height: 360,
-      boards: [aiBoard.id],
-    },
-    {
-      type: "url",
-      title: "Sintel — Official Trailer",
-      description: "by Blender Foundation",
-      url: "https://www.youtube.com/watch?v=eRsGyueVLvQ",
-      mediaType: "video",
-      provider: "youtube",
-      thumbnailUrl: "https://i.ytimg.com/vi/eRsGyueVLvQ/hqdefault.jpg",
-      domain: "youtube",
-      width: 480,
-      height: 360,
-    },
-    {
-      type: "url",
-      title: "The uses of sidewalks: a life",
-      description: "On how everyday street activity creates safety and trust.",
-      whySaved:
-        "This is basically describing my street in one paragraph — wanted to know if it's a real theory or just a nice metaphor.",
-      url: "https://example.com/sidewalk-ballet",
-      mediaType: "image",
-      provider: "web",
-      thumbnailUrl: "https://picsum.photos/seed/sidewalk-ballet/640/420",
-      domain: "example.com",
-      boards: [citiesBoard.id],
-    },
-    {
-      type: "url",
-      title: "Desire lines: the paths people actually walk",
-      description: "How informal dirt paths reveal what planners got wrong.",
-      whySaved: "Love that this is basically crowd-sourced feedback nobody asked for.",
-      url: "https://example.com/desire-lines",
-      mediaType: "image",
-      provider: "web",
-      thumbnailUrl: "https://picsum.photos/seed/desire-lines/640/900",
-      domain: "example.com",
-      boards: [citiesBoard.id],
-    },
-    {
-      type: "url",
-      title: "Why we lost our 'third places'",
-      description: "Tracks the decline of informal public gathering spots.",
-      whySaved: "Explains why so few places near me feel worth lingering in.",
-      url: "https://example.com/third-places",
-      mediaType: "link",
-      provider: "web",
-      domain: "example.com",
-      boards: [citiesBoard.id],
-    },
-    {
-      type: "note",
-      title: "Overheard: 'nobody walks here after 6pm'",
-      whySaved: "Wanted to remember the exact phrase before I lost it.",
-      mediaType: "text",
-      boards: [citiesBoard.id],
-    },
-    {
-      type: "note",
-      title: "Idea: a 'curiosity commute' — one new street a week",
-      whySaved: "Half-formed personal project, not sure if it goes anywhere yet.",
-      mediaType: "text",
-    },
+      {
+          "type": "url",
+          "title": "why you want to do everything so you do nothing, and how to fix it",
+          "description": "by Isabel Radford",
+          "url": "https://www.youtube.com/watch?v=96TOwl10xZs",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/96TOwl10xZs/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "how to stop living in your head and start living your life",
+          "description": "by Isabel Radford",
+          "url": "https://www.youtube.com/watch?v=OTYgGsNSGXo",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/OTYgGsNSGXo/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "doing this 1 thing changed my life",
+          "description": "by Lindsiann",
+          "url": "https://www.youtube.com/watch?v=eiw7KYhWlrE",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/eiw7KYhWlrE/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "the paradox of being ambitious but lazy",
+          "description": "by Lindsiann",
+          "url": "https://www.youtube.com/watch?v=pN_OGOPI92g",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/pN_OGOPI92g/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "how to start doing something, instead of saying you will do something",
+          "description": "discipline, consistency, the best time is now.",
+          "url": "https://chicgirlmoment.substack.com/p/how-to-start-doing-something-instead",
+          "mediaType": "image",
+          "provider": "web",
+          "thumbnailUrl": "https://substackcdn.com/image/fetch/$s_!lcVr!,w_1200,h_675,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fe827c2b9-9011-44cf-b1c2-34f7613e5fcb_1600x900.png",
+          "domain": "chicgirlmoment.substack.com",
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "the best piece of advice I've ever received",
+          "description": "by Lindsiann",
+          "url": "https://www.youtube.com/watch?v=Yrug2Fd9CWY",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/Yrug2Fd9CWY/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "you didn't achieve your goal because you didn't want it enough",
+          "description": "planning it in your journal and sharing it with others won't change anything if you don't take action.",
+          "url": "https://chicgirlmoment.substack.com/p/you-didnt-achieve-your-goal-because",
+          "mediaType": "image",
+          "provider": "web",
+          "thumbnailUrl": "https://substackcdn.com/image/fetch/$s_!-_5X!,w_1200,h_675,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F2f021902-db18-4a12-a591-e056001f100f_1600x900.png",
+          "domain": "chicgirlmoment.substack.com",
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "chase your fears // EP 104",
+          "description": "by madeline argy",
+          "url": "https://www.youtube.com/watch?v=MHHqHfgR4YU",
+          "mediaType": "video",
+          "provider": "youtube",
+          "thumbnailUrl": "https://i.ytimg.com/vi/MHHqHfgR4YU/hqdefault.jpg",
+          "domain": "youtube",
+          "width": 200,
+          "height": 113,
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "url",
+          "title": "How to Become Dangerously Articulate — And Change Your Life",
+          "description": "The woman who can say exactly what she means, precisely when it matters, in a way that moves people — that woman has an advantage that compounds for life.",
+          "url": "https://richgirlacadmy.substack.com/p/how-to-become-dangerously-articulate",
+          "mediaType": "image",
+          "provider": "web",
+          "thumbnailUrl": "https://substackcdn.com/image/fetch/$s_!nG98!,w_1200,h_675,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F6f35dfa5-3f43-4239-a1a6-60d2bbf4a42a_735x920.jpeg",
+          "domain": "richgirlacadmy.substack.com",
+          "status": "collected",
+          "onBoard": true
+      },
+      {
+          "type": "note",
+          "title": "PREVIEW",
+          "description": "Below shows how your library would look like after saving your Sparks",
+          "mediaType": "text",
+          "status": "inbox",
+          "onBoard": false
+      }
   ];
 
-  for (const spark of sparks) {
+  for (const { onBoard, ...spark } of sparks) {
     await prisma.spark.create({
       data: {
         userId: LOCAL_USER_ID,
-        type: spark.type,
-        title: spark.title,
-        description: spark.description,
-        whySaved: spark.whySaved,
-        url: spark.url,
-        mediaType: spark.mediaType,
-        provider: spark.provider,
-        thumbnailUrl: spark.thumbnailUrl,
-        domain: spark.domain,
-        width: spark.width,
-        height: spark.height,
-        status: spark.boards?.length ? "collected" : "inbox",
-        collections: spark.boards
-          ? { create: spark.boards.map((collectionId) => ({ collectionId })) }
-          : undefined,
+        ...spark,
+        collections: onBoard ? { create: [{ collectionId: board.id }] } : undefined,
       },
     });
   }
 }
 
 async function seedCanvas() {
-  const [sidewalks, desireLines, overheard] = await Promise.all([
-    prisma.spark.findFirst({ where: { userId: LOCAL_USER_ID, title: "The uses of sidewalks: a life" } }),
-    prisma.spark.findFirst({ where: { userId: LOCAL_USER_ID, title: "Desire lines: the paths people actually walk" } }),
-    prisma.spark.findFirst({ where: { userId: LOCAL_USER_ID, title: "Overheard: 'nobody walks here after 6pm'" } }),
-  ]);
-  if (!sidewalks || !desireLines || !overheard) return; // sample sparks weren't seeded (real data already existed)
+  const sparks = await prisma.spark.findMany({ where: { userId: LOCAL_USER_ID } });
+  const sparkIdByUrl: Record<string, string> = {};
+  for (const spark of sparks) if (spark.url) sparkIdByUrl[spark.url] = spark.id;
 
   const canvas = await prisma.canvas.create({
-    data: { userId: LOCAL_USER_ID, name: "Cities that feel alive" },
+    data: { userId: LOCAL_USER_ID, name: "Doing the thing" },
   });
 
-  const [sidewalksNode, desireLinesNode, overheardNode, thoughtNode] = await Promise.all([
-    prisma.canvasNode.create({
-      data: { canvasId: canvas.id, kind: "spark", sparkId: sidewalks.id, x: 0, y: 0 },
-    }),
-    prisma.canvasNode.create({
-      data: { canvasId: canvas.id, kind: "spark", sparkId: desireLines.id, x: 320, y: -60 },
-    }),
-    prisma.canvasNode.create({
-      data: { canvasId: canvas.id, kind: "spark", sparkId: overheard.id, x: 320, y: 220 },
-    }),
-    prisma.canvasNode.create({
+  // The sample mindmap, exactly as it appears when the app is first opened.
+  const n0 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "text",
+      text: "Why do I plan so much and start so little?",
+      fontSize: 14,
+      fontFamily: "sans",
+      textColor: "ink",
+      backgroundColor: "red",
+      width: 225,
+      height: 105,
+      x: 400,
+      y: 7,
+    },
+  });
+
+  const n1 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "spark",
+      sparkId: sparkIdByUrl["https://www.youtube.com/watch?v=96TOwl10xZs"],
+      detailLevel: "compact",
+      x: 369,
+      y: 190,
+    },
+  });
+
+  const n2 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "spark",
+      sparkId: sparkIdByUrl["https://chicgirlmoment.substack.com/p/how-to-start-doing-something-instead"],
+      detailLevel: "compact",
+      x: 724,
+      y: 506,
+    },
+  });
+
+  const n3 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "spark",
+      sparkId: sparkIdByUrl["https://www.youtube.com/watch?v=Yrug2Fd9CWY"],
+      detailLevel: "compact",
+      x: 740,
+      y: 868,
+    },
+  });
+
+  const n4 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "spark",
+      sparkId: sparkIdByUrl["https://www.youtube.com/watch?v=OTYgGsNSGXo"],
+      detailLevel: "compact",
+      x: 55,
+      y: 871,
+    },
+  });
+
+  const n5 = await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "text",
+      text: "Seasons of Life: Commit to one path for now, knowing you can change later.\n\nMicro-actions: Use the 2-minute rule or scale down tasks to create momentum.\n\nTime Blocking: For those with neurodivergent brains, focus on completing weekly goals rather than strict daily schedules.\n\nEisenhower Matrix: Categorize tasks by urgency and importance.",
+      fontSize: 14,
+      fontFamily: "sans",
+      textColor: "ink",
+      backgroundColor: "amber",
+      width: 632,
+      height: 223,
+      x: -112,
+      y: 512,
+    },
+  });
+
+  await prisma.canvasNode.create({
+    data: {
+      canvasId: canvas.id,
+      kind: "text",
+      text: "This is a sample mind map: \n\nAdd your sparks, your thoughts and make connections ",
+      fontSize: 16,
+      fontFamily: "sans",
+      textColor: "ink",
+      backgroundColor: "plain",
+      width: 517,
+      height: 174,
+      x: -706,
+      y: 138,
+    },
+  });
+
+  const edges = [
+    { from: n0, to: n1, sourceHandle: "bottom", targetHandle: "top" },
+    { from: n2, to: n3, sourceHandle: "bottom", targetHandle: "top" },
+    { from: n1, to: n5, sourceHandle: "bottom", targetHandle: "top" },
+    { from: n4, to: n5, sourceHandle: "top", targetHandle: "bottom" },
+    { from: n1, to: n2, sourceHandle: "bottom", targetHandle: "top" },
+  ];
+  for (const edge of edges) {
+    await prisma.canvasEdge.create({
       data: {
         canvasId: canvas.id,
-        kind: "text",
-        text: "Maybe it's not the street's design at all — it's whether it gives people a reason to stay.",
-        x: 0,
-        y: 260,
+        fromNodeId: edge.from.id,
+        toNodeId: edge.to.id,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
       },
-    }),
-  ]);
-
-  await Promise.all([
-    prisma.canvasEdge.create({
-      data: { canvasId: canvas.id, fromNodeId: sidewalksNode.id, toNodeId: desireLinesNode.id },
-    }),
-    prisma.canvasEdge.create({
-      data: { canvasId: canvas.id, fromNodeId: sidewalksNode.id, toNodeId: overheardNode.id },
-    }),
-    prisma.canvasEdge.create({
-      data: { canvasId: canvas.id, fromNodeId: overheardNode.id, toNodeId: thoughtNode.id },
-    }),
-  ]);
+    });
+  }
 }
 
 main()

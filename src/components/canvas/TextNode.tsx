@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef } from "react";
 import {
   Handle,
   NodeResizeControl,
@@ -8,10 +8,9 @@ import {
   useReactFlow,
   type Node,
   type NodeProps,
-  type ResizeDragEvent,
 } from "@xyflow/react";
 import { X } from "lucide-react";
-import { updateNodeSize, updateTextNodeContent, updateTextNodeStyle } from "@/lib/canvas-actions";
+import { useCanvasEdit } from "@/components/canvas/canvas-edit";
 import {
   TextStylePopover,
   type TextNodeStyleValues,
@@ -31,13 +30,13 @@ const MIN_NODE_HEIGHT = 80;
 
 export function TextNode({ id, data, selected, width, height }: NodeProps<TextFlowNode>) {
   const { deleteElements } = useReactFlow();
-  const [, startTransition] = useTransition();
-  const [style, setStyle] = useState<TextNodeStyleValues>({
+  const { checkpoint, patchNodeData } = useCanvasEdit();
+  const style: TextNodeStyleValues = {
     fontSize: data.fontSize,
     fontFamily: data.fontFamily,
     textColor: data.textColor,
     backgroundColor: data.backgroundColor,
-  });
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isManualSize = width != null && height != null;
 
@@ -48,23 +47,19 @@ export function TextNode({ id, data, selected, width, height }: NodeProps<TextFl
     el.style.height = `${el.scrollHeight}px`;
   }
 
+  // Re-fit whenever the text or font changes — including when undo/redo changes them.
   useEffect(() => {
     resizeToFitContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isManualSize]);
+  }, [isManualSize, data.text, data.fontSize, data.fontFamily]);
 
   function handleStyleChange(patch: Partial<TextNodeStyleValues>) {
-    const next = { ...style, ...patch };
-    setStyle(next);
-    startTransition(async () => {
-      await updateTextNodeStyle(id, patch);
-    });
+    checkpoint();
+    patchNodeData(id, patch);
   }
 
-  function handleResizeEnd(_event: ResizeDragEvent, params: { width: number; height: number }) {
-    startTransition(async () => {
-      await updateNodeSize(id, params.width, params.height);
-    });
+  function handleResizeStart() {
+    checkpoint();
   }
 
   const fontClass = lookupFontFamily(style.fontFamily).fontClass;
@@ -95,7 +90,7 @@ export function TextNode({ id, data, selected, width, height }: NodeProps<TextFl
           position="bottom-right"
           minWidth={MIN_NODE_WIDTH}
           minHeight={MIN_NODE_HEIGHT}
-          onResizeEnd={handleResizeEnd}
+          onResizeStart={handleResizeStart}
         >
           <div className="nodrag h-3 w-3 rounded-sm border-2 border-white bg-amber-400 shadow dark:border-zinc-900" />
         </NodeResizeControl>
@@ -119,13 +114,11 @@ export function TextNode({ id, data, selected, width, height }: NodeProps<TextFl
 
       <textarea
         ref={textareaRef}
-        defaultValue={data.text}
-        onChange={resizeToFitContent}
-        onBlur={(event) => {
-          const text = event.target.value;
-          startTransition(async () => {
-            await updateTextNodeContent(id, text);
-          });
+        value={data.text}
+        onChange={(event) => {
+          // One undo step per burst of typing (steps merge until you pause for a second).
+          checkpoint(`text:${id}`, 1000);
+          patchNodeData(id, { text: event.target.value });
         }}
         placeholder="Type a thought…"
         rows={4}

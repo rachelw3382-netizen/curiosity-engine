@@ -117,6 +117,8 @@ model CanvasEdge {
   canvasId   String
   fromNodeId String
   toNodeId   String
+  sourceHandle String? // which side of the from-node the line leaves (top/right/bottom/left)
+  targetHandle String? // which side of the to-node it arrives at
 
   canvas   Canvas     @relation(fields: [canvasId], references: [id], onDelete: Cascade)
   fromNode CanvasNode @relation("edgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)

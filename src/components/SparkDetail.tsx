@@ -5,19 +5,14 @@ import { useState, useTransition } from "react";
 import { EmbedBlock } from "@/components/EmbedBlock";
 import { InstagramEmbed } from "@/components/InstagramEmbed";
 import { RelatedContent } from "@/components/RelatedContent";
+import { SparkNotes } from "@/components/SparkNotes";
+import { SourceTag } from "@/components/SourceTag";
 import { SparkActionsMenu } from "@/components/SparkActionsMenu";
 import { SparkEditForm } from "@/components/SparkEditForm";
 import { deleteSparkById } from "@/lib/actions";
 import type { RelatedContentResult } from "@/lib/related-content";
 import type { Spark } from "@/generated/prisma/client";
 
-const providerLabel: Record<string, string> = {
-  youtube: "YouTube",
-  tiktok: "TikTok",
-  vimeo: "Vimeo",
-  web: "Web",
-  instagram: "Instagram",
-};
 
 export function SparkDetail({
   spark,
@@ -34,6 +29,11 @@ export function SparkDetail({
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit">("view");
+  // Mirrors the media branches below: true when a thumbnail image is shown (not an embed/Instagram).
+  const showsImage =
+    !(spark.domain === "instagram.com" && spark.embedHtml) &&
+    !(spark.mediaType === "embed" && spark.embedHtml) &&
+    Boolean(spark.thumbnailUrl);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -80,15 +80,17 @@ export function SparkDetail({
               href={spark.url}
               target="_blank"
               rel="noreferrer"
-              className="overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-900"
+              className="relative block overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-900"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={spark.thumbnailUrl} alt="" className="w-full" />
+              <SourceTag spark={spark} overlay />
             </a>
           ) : (
-            <div className="overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-900">
+            <div className="relative overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-900">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={spark.thumbnailUrl} alt="" className="w-full" />
+              <SourceTag spark={spark} overlay />
             </div>
           )
         ) : null}
@@ -105,11 +107,8 @@ export function SparkDetail({
           </div>
         ) : (
           <>
-            {spark.provider || spark.domain ? (
-              <span className="text-caption w-fit text-xs uppercase text-amber-700 dark:text-amber-400">
-                {providerLabel[spark.provider ?? ""] ?? spark.domain}
-              </span>
-            ) : null}
+            {/* With an image, the tag sits on its corner (like the library card); otherwise here. */}
+            {showsImage ? null : <SourceTag spark={spark} className="w-fit" />}
 
             <h1 className="text-display text-3xl font-semibold text-zinc-900 dark:text-zinc-50">
               {spark.url ? (
@@ -127,11 +126,7 @@ export function SparkDetail({
               </p>
             ) : null}
 
-            {spark.whySaved ? (
-              <p className="text-body border-l-2 border-amber-300 pl-3 text-sm italic text-zinc-500 dark:border-amber-700 dark:text-zinc-400">
-                &ldquo;{spark.whySaved}&rdquo;
-              </p>
-            ) : null}
+            <SparkNotes notes={spark.whySaved} size="page" />
 
             {spark.url ? (
               <a
