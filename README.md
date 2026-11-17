@@ -9,6 +9,32 @@ Curiosity Engine has two connected layers:
 
 This is a local-first MVP: single implicit local user, no auth yet, and no AI-generated content anywhere in the app — with one narrow, deliberate exception (see below).
 
+## What it looks like
+
+The app opens with a sample library and a sample mindmap, so you can see how everything fits together straight away (see [Getting started](#getting-started)).
+
+**Home**
+
+![Home page: "Save what sparks you. Follow what stays with you."](docs/screenshots/home.png)
+
+**Spark Library** — a masonry board of saved links, videos, and notes. Each card carries a small tag naming where it came from (YouTube, Substack, …).
+
+![Spark Library: a masonry board of video and article sparks with source tags](docs/screenshots/library.png)
+
+**Capturing a spark** — write a quick thought, or import a link, a bulk paste of links, or an embed code.
+
+![Add a spark: write a thought and file it into boards](docs/screenshots/add-spark-post.png)
+
+![Add a spark: paste a link or video, with bulk import and embed code options](docs/screenshots/add-spark-import.png)
+
+**Mindmap** — drag sparks and notes around a freeform canvas, connect them, and undo or redo any change. Everything autosaves as you go.
+
+![A mindmap canvas with sparks, notes, and connecting lines](docs/screenshots/mindmap.png)
+
+**Your mindmaps**
+
+![The mindmaps list with the sample mindmap and a "New mindmap" button](docs/screenshots/mindmaps-list.png)
+
 ## Technical highlights
 
 - **On-device "More like this" reranking.** Related-content suggestions are reranked by a local sentence-embedding model (`@huggingface/transformers`) running inside the Node server process — no cloud AI calls, no API keys, no per-call cost, and no data ever leaves the machine. A zero-dependency keyword scorer is the synchronous fallback if the model fails to load. This is the one scoped exception to "no AI-generated content": it reranks real fetched candidates, it never generates or invents text.
