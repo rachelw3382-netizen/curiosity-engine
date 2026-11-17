@@ -27,13 +27,13 @@ The app opens with a sample library and a sample mindmap, so you can see how eve
 
 ![Add a spark: paste a link or video, with bulk import and embed code options](docs/screenshots/add-spark-import.png)
 
-**Mindmap** — drag sparks and notes around a freeform canvas, connect them, and undo or redo any change. Everything autosaves as you go.
-
-![A mindmap canvas with sparks, notes, and connecting lines](docs/screenshots/mindmap.png)
-
-**Your mindmaps**
+**Your mindmaps** — all your mindmaps in one place, with a button to start a new one.
 
 ![The mindmaps list with the sample mindmap and a "New mindmap" button](docs/screenshots/mindmaps-list.png)
+
+**Mindmap** — open one to drag sparks and notes around a freeform canvas, connect them, and undo or redo any change. Everything autosaves as you go.
+
+![A mindmap canvas with sparks, notes, and connecting lines](docs/screenshots/mindmap.png)
 
 ## Technical highlights
 
