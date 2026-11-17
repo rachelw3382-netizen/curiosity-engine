@@ -176,11 +176,16 @@ async function seedSparks() {
       }
   ];
 
-  for (const { onBoard, ...spark } of sparks) {
+  // Give every spark its own timestamp, one second apart and ending just before now, so the
+  // library order is deterministic: the last one listed (the PREVIEW note) is the newest and
+  // shows first, and anything you capture afterwards lands above it.
+  const start = Date.now() - sparks.length * 1000;
+  for (const [i, { onBoard, ...spark }] of sparks.entries()) {
     await prisma.spark.create({
       data: {
         userId: LOCAL_USER_ID,
         ...spark,
+        createdAt: new Date(start + i * 1000),
         collections: onBoard ? { create: [{ collectionId: board.id }] } : undefined,
       },
     });
